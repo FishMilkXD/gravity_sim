@@ -2,12 +2,11 @@ import pygame
 import numpy as np
 
 # constants
-WIDTH, HEIGHT = 800, 600
+WIDTH, HEIGHT = 1280, 1000
 FPS = 60
 
 # physics constants
-G = 6.67430e-11 # gravitational constant
-SCALE = 1e-9
+G = 20 # artificial gravitational constant
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -32,31 +31,14 @@ class Body:
         self.path.append(tuple(self.position))
         
     def draw(self, screen):
-        # convert real position to pixel corrdiantes
-        x = WIDTH // 2 + int(self.position[0] * SCALE)
-        y = HEIGHT // 2 + int(self.position[0] * SCALE)
-        screen_pos = (x,y)
-        
-        pixel_radius = max(2, int(self.radius * SCALE))
-        pygame.draw.circle(screen, self.color, screen_pos, self.radius)
+        pygame.draw.circle(screen, self.color, self.position.astype(int), self.radius)
         
         if len(self.path) > 2:
             pygame.draw.lines(screen, self.color, False, self.path[-500:], 1)
             
 
 
-star = Body(WIDTH // 2, HEIGHT // 2, mass = 5000, radius = 15, color = (255,255,0))
-
-
-# ===== user prompt for star =====
-def user_star_input():
-    try:
-        mass = float(input("Enter star mass (default 5000kg): ") or 5000)
-        radius = int(input("Enter star radius (default 15)"))
-
-
-
-
+star = Body(WIDTH // 2, HEIGHT // 2, mass = 20000, radius = 15, color = (255,255,0))
 
 
 # ===== launch object with mouse =====
