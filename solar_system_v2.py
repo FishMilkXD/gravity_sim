@@ -4,11 +4,14 @@ import numpy as np
 # ===== PHYSICS CONSTANTS =====
 G = 6.67430e-11 # Gravitational constant (m^3 / kg / s^2)
 SCALE = 1.6e-10 
-TIME_STEP = 60 * 60 * 12 # 1 day per simulation step
+TIME_STEP = 60 * 60 * 24 # 1 day per simulation step
 
 # ===== DISPLAY =====
 WIDTH, HEIGHT = 1920, 1080
 FPS = 60
+
+# ===== INITIALIZE DICTIONARIES =====
+planet_trackers = {}
 
 pygame.init()
 font = pygame.font.SysFont("Comic Sans", 14)
@@ -79,8 +82,51 @@ class Body:
         hud_text = f"Time Step: {time_step_days:.2f} days/frame | Days Passed: {int(days_passed)}"
         hud_render = font.render(hud_text, True, (255, 255, 255))
         screen.blit(hud_render, (20,20))
-            
-# ===== INIT BODIES =====
+
+
+# ===== REVOLUTION AND ENERGY TRACKER FUNCTION =====
+def track_revolutions_and_energy(body, sim_time):
+    tracker = planet_trackers[body.name]
+    
+    # angle tracking
+    angle = np.arctan2(body.position[1], body.position[0])
+    delta_angle = angle - tracker["prev_angle"]
+    
+    # wrap around -pi to pi
+    if delta_angle < -np.pi:
+        delta_angle += 2 * np.pi
+    elif delta_angle > np.pi:
+        delta_angle -= 2 * np.pi
+        
+        
+    tracker["angle_total"] += delta_angle
+    tracker["prev_angle"] = angle
+    
+    # revolution complete
+    if tracker["angle_total"] >= 2 * np.pi:
+        tracker["revolutions"] += 1
+        days_pased = sim_time / (60 * 60 * 24)
+        print(f"{body.name} completed {tracker['revolutions']} revolution(s) in {days_pased:.2f} days!")
+        tracker["angle_total"] = 0
+        
+    # energy tracking 
+    days_now = sim_time / (60 * 60 * 24)
+    # every 100 days the kinetic energy will be outputted
+    if int(days_now) >= tracker["last_energy_day"] + 100:
+        kinetic = 0.5 * body.mass * np.linalg.norm(body.velocity) ** 2
+        print(f"[Day {int(days_now)}] {body.name} KE: {kinetic:.2e} J")
+        tracker["last_energy_day"] = int(days_now)
+
+# ===== TRACKER INITIALIZATION =====
+def init_tracker(body):
+    planet_trackers[body.name] = {
+        "prev_angle": np.arctan2(body.position[1], body.position[0]),
+        "angle_total": 0,
+        "revolutions": 0,
+        "last_energy_day": 0
+    }
+
+# ===== INITIALIZE BODIES =====
 # x is the distance of the planet from the sun
 sun = Body(
     name = "Sun",
@@ -177,8 +223,17 @@ bodies = [sun, mercury, venus, earth, mars, jupiter, saturn, uranus, neptune]
 # ===== MAIN LOOP =====
 running = True
 simulation_time = 0
-revolutions = 0
-prev_angle = np.arctan2(earth.position[1], earth.position[0])
+
+# call to initalize tracker
+init_tracker(mercury)
+init_tracker(venus)
+init_tracker(earth)
+init_tracker(mars)
+init_tracker(jupiter)
+init_tracker(saturn)
+init_tracker(uranus)
+init_tracker(neptune)
+
 while running:
     clock.tick(FPS)
     
@@ -228,9 +283,19 @@ while running:
         
         body.leapfrog_finish_velocity(force, TIME_STEP)
         
-        
     # Track simulation time
     simulation_time += TIME_STEP
+    
+    # Output the revolution and energy
+    track_revolutions_and_energy(mercury, simulation_time)
+    track_revolutions_and_energy(venus, simulation_time)
+    track_revolutions_and_energy(earth, simulation_time)
+    track_revolutions_and_energy(mars, simulation_time)
+    track_revolutions_and_energy(jupiter, simulation_time)
+    track_revolutions_and_energy(saturn, simulation_time)
+    track_revolutions_and_energy(uranus, simulation_time)
+    track_revolutions_and_energy(neptune, simulation_time)
+    
 
         
     screen.fill((0, 0, 10)) # space block

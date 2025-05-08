@@ -8,3 +8,14 @@
 | Saturn  | 5.7e26    | 1.43e12               | 9,690               | 6.0e7      |
 | Uranus  | 8.7e25    | 2.87e12               | 6,800               | 2.5e7      |
 | Neptune | 1.0e26    | 4.5e12                | 5,430               | 2.4e7      |
+
+| Planet  | Orbital Period (Earth days) | Orbital Period (Earth years) |
+| ------- | --------------------------- | ---------------------------- |
+| Mercury | 87.97 days                  | 0.24 years                   |
+| Venus   | 224.70 days                 | 0.62 years                   |
+| Earth   | 365.25 days                 | 1.00 year                    |
+| Mars    | 686.98 days                 | 1.88 years                   |
+| Jupiter | 4,332.59 days               | 11.86 years                  |
+| Saturn  | 10,759.22 days              | 29.46 years                  |
+| Uranus  | 30,688.5 days               | 84.01 years                  |
+| Neptune | 60,182.0 days               | 164.8 years                  |
