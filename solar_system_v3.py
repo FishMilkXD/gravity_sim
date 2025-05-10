@@ -1,10 +1,14 @@
 import pygame
 import numpy as np
+import os
+import csv
+import matplotlib.pyplot as plt
 
 # ===== PHYSICS CONSTANTS =====
-G = 6.67430e-11 # Gravitational constant (m^3 / kg / s^2)
+G = 6.67430e-11 # Gravitational constant (m^3 / kg / s^2) 
 SCALE = 1.6e-10 
 TIME_STEP = 60 * 60 * 12
+
 
 # ===== DISPLAY =====
 WIDTH, HEIGHT = 1920, 1080
@@ -66,8 +70,50 @@ class Body:
         screen.blit(hud_render, (20,20))
 
 # ===== VELOCITY CALCULATOR =====
-def orbital_velocity(sun_mass, a, r):
-    return np.sqrt(G * sun_mass * (2 / r - 1 / a)) # uses the vis-visa equation
+def orbital_velocity(mass, a, r):
+    return np.sqrt(mass * (2 / r - 1 / a)) # uses the vis-visa equation
+
+# ===== MOMENTUM CORRECTION =====
+def correct_momentum(bodies):
+    total_momentum = np.zeros(2)
+    total_mass = 0
+
+    for body in bodies:
+        total_momentum += body.mass * body.velocity
+        total_mass += body.mass
+
+    # give the sun a velocity that balances everything
+    for body in bodies:
+        if body.name == "Sun":
+            body.velocity = -total_momentum / body.mass
+
+# ===== BARYCENTRIC FRAME SHIFT =====
+def shift_to_barycentric_frame(bodies):
+    total_mass = sum(body.mass for body in bodies)
+
+    com_position = sum(body.mass * body.position for body in bodies) / total_mass
+    com_velocity = sum(body.mass * body.velocity for body in bodies) / total_mass
+
+    for body in bodies:
+        body.position -= com_position
+        body.velocity -= com_velocity
+
+# ===== COMPUTE FORCES =====
+def compute_all_forces(bodies):
+    forces = {body.name: np.zeros(2) for body in bodies}
+    for i in range(len(bodies)):
+        for j in range(i + 1, len(bodies)):
+            b1, b2 = bodies[i], bodies[j]
+            r = b2.position - b1.position
+            dist = np.linalg.norm(r)
+            if dist == 0:
+                continue
+            f_mag = G * b1.mass * b2.mass / dist**2
+            f_dir = r / dist
+            f = f_mag * f_dir
+            forces[b1.name] += f
+            forces[b2.name] -= f
+    return forces
 
 # ===== CREATE PLANET FUNCTION =====
 def create_planet(name, data):
@@ -75,7 +121,8 @@ def create_planet(name, data):
     e = data["e"] # eccentricity
     r = a * (1 - e) # perihelion distance
     
-    v = orbital_velocity(sun.mass, a, r)
+    mu = G * sun.mass
+    v = orbital_velocity(mu, a, r)
     
     return Body(
         name = name,
@@ -88,6 +135,7 @@ def create_planet(name, data):
     )
 
 # ===== REVOLUTION AND ENERGY TRACKER FUNCTION =====
+# it also logs the energy and revolutions
 def track_revolutions_and_energy(body, sim_time):
     tracker = planet_trackers[body.name]
     
@@ -112,13 +160,21 @@ def track_revolutions_and_energy(body, sim_time):
         print(f"{body.name} completed {tracker['revolutions']} revolution(s) in {days_pased:.2f} days!")
         tracker["angle_total"] = 0
         
-    # energy tracking 
+    # kinetic energy tracking 
     days_now = sim_time / (60 * 60 * 24)
     # every 100 days the kinetic energy will be outputted
     if int(days_now) >= tracker["last_energy_day"] + 100:
         kinetic = 0.5 * body.mass * np.linalg.norm(body.velocity) ** 2
         print(f"[Day {int(days_now)}] {body.name} KE: {kinetic:.2e} J")
         tracker["last_energy_day"] = int(days_now)
+
+        # log to CSV
+        csv_writer.writerow([
+            int(days_now),
+            body.name,
+            f"{kinetic:.6e}",
+            tracker["revolutions"]
+        ])
 
 # ===== TRACKER INITIALIZATION =====
 def init_tracker(body):
@@ -156,16 +212,30 @@ planet_data = {
 # ===== INITIALIZE BODIES =====
 bodies = [sun]
 
-
 for name, data in planet_data.items():
     planet = create_planet(name, data)
     bodies.append(planet) # puts the planets into the bodies dictionary
     init_tracker(planet) # creates a tracker for each planet
     
-    
+correct_momentum(bodies)
+shift_to_barycentric_frame(bodies)
+
+# ===== Create a CSV file for logging energy and revolutions =====
+output_file = "planet_data.csv"
+write_header = not os.path.exists(output_file) # write headers if file doesn't exist
+
+csv_file = open(output_file, "a", newline="")
+csv_writer = csv.writer(csv_file)
+
+if write_header:
+    csv_writer.writerow(["Day", "Body", "KineticEnergy(J)", "Revolutions"])
+
+
 # ===== MAIN LOOP =====
 running = True
 simulation_time = 0
+kinetic_energy_data = {body.name: [] for body in bodies}
+time_data = []
 
 while running:
     clock.tick(FPS)
@@ -175,8 +245,8 @@ while running:
         if event.type == pygame.QUIT:
             running = False
       
-    
     keys = pygame.key.get_pressed()
+
     # ===== Handle Zoom =====
     if keys[pygame.K_EQUALS] or keys[pygame.K_PLUS]: # zoom out
         SCALE *= 1.1
@@ -184,78 +254,58 @@ while running:
         SCALE /= 1.1
     
 
-          
     # ===== Phyiscs simulation =====
-    
     # ----- YOSHIDA 4TH ORDER SYMPLETIC INTEGRATION -----
-    for weight in YOSHIDA_WEIGHTS:
-        delta_t = TIME_STEP * weight
-        forces = {body.name: np.zeros(2) for body in bodies} # initailizes all forces
-    
-        # step 1: compute forces at current position
-        for i in range(len(bodies)):
-            for j in range(i + 1, len(bodies)):
-                body_i = bodies[i]
-                body_j = bodies[j]
-                # compute the gravitational force exerted by the current body with respect to one of the planets
-                r_vec = body_j.position - body_i.position # calcualtes the displacement vector from the planet to the current body, basically the position of the current body that is relative to the planet in x/y coors
-                r_mag = np.linalg.norm(r_vec) # calculates the magnitude of the displacement vector above, basically the actually distance of the current body and the planet
-                if r_mag == 0:
-                    continue
-                
-                force_mag = G * (body_i.mass * body_j.mass) / (r_mag **2) # newton's law of universal gravitation
-                force_dir = r_vec / r_mag # calculates the unit vector of the displacement vector, basically the direction
-                force = force_dir * force_mag # converts the scalar forces into a vector force, which have magnitude and direction
-                
-                forces[body_i.name] += force 
-                forces[body_j.name] -= force
-            
-        # step 2: first half-step velocity update
+    for i in range(3): # 3 stages in Yoshida
+        delta_t = TIME_STEP * YOSHIDA_WEIGHTS[i]
+
+        # step 1: update positions
         for body in bodies:
-            body.velocity += 0.5 * forces[body.name] / body.mass * delta_t
-        
-        # step 3: full position update
-        for body in bodies:   
             body.position += body.velocity * delta_t
-            body.path.append(body.position.copy())
-            
-        # step 4: recompute forecs after move
-        for i in range(len(bodies)):
-            for j in range(i + 1,len(bodies)):
-                body_i = bodies[i]
-                body_j = bodies[j]
-                # compute the gravitational force exerted by the current body with respect to one of the planets
-                r_vec = body_j.position - body_i.position # calcualtes the displacement vector from the planet to the current body, basically the position of the current body that is relative to the planet in x/y coors
-                r_mag = np.linalg.norm(r_vec) # calculates the magnitude of the displacement vector above, basically the actually distance of the current body and the planet
-                if r_mag == 0:
-                    continue
-                
-                force_mag = G * (body_i.mass * body_j.mass) / (r_mag **2) # newton's law of universal gravitation
-                force_dir = r_vec / r_mag # calculates the unit vector of the displacement vector, basically the direction
-                force = force_dir * force_mag # converts the scalar forces into a vector force, which have magnitude and direction
-                
-                forces[body_i.name] += force 
-                forces[body_j.name] -= force
-            
-        # step 5: second half-step velocity update
+
+        # step 2: compute new forces at updated positions
+        forces = compute_all_forces(bodies)
+
+        # step 3: update velocities using new forces
         for body in bodies:
-            body.velocity += 0.5 * forces[body.name] / body.mass * delta_t
+            body.velocity += forces[body.name] / body.mass * delta_t
+                    
+        # step 4: save path for trails
+        for body in bodies:
+            body.path.append(body.position.copy())
     
         
     # Track simulation time
     simulation_time += TIME_STEP
+
+    # record kinetic energy
+    time_data.append(simulation_time / (60 * 60 * 24)) # convert to days
+    for body in bodies:
+        ke = 0.5 * body.mass * np.linalg.norm(body.velocity) ** 2
+        kinetic_energy_data[body.name].append(ke)
     
     # Output the revolution and energy
     for body in bodies:
         if body.name != "Sun":
             track_revolutions_and_energy(body, simulation_time)
     
-
-        
     screen.fill((0, 0, 10)) # space block
     for body in bodies:
         body.draw(screen)
         
     pygame.display.flip()
     
+csv_file.close()
 pygame.quit()
+
+# plot kinetic energy over time
+for name, ke_series in kinetic_energy_data.items():
+    plt.plot(time_data, ke_series, label=name)
+
+plt.xlabel("Time (days)")
+plt.ylabel("Kinetic Energy (J)")
+plt.title("Kinetic Energy Over Time")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
